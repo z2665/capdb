@@ -14,8 +14,11 @@ let getconig () =
         x |> Console.WriteLine
         x ) |> Array.toList
 
-let gettablename (conf:string) =
+let getname (conf:string) =
         conf.Split [|'='|] |>  Array.last
+let makeSelect (clolist: string list,tableName:string,pkName:string)=
+    let str=String.Join(",",clolist)
+    sprintf "select %s from %s where %s=@%s" str tableName pkName pkName
 //获取对应表结构
 let getDbStruct (conf:string,table_name:string)=
     async{
@@ -47,12 +50,33 @@ let printinfo (x:string) =
         Console.ForegroundColor <-ConsoleColor.DarkGreen
         x|> Console.WriteLine |> ignore
         Console.ForegroundColor <- old
+
+//同步基准库到目标库
+let syncBaseToDest(baseConf:string,destConf:string,tableName:string,pkey:string,pkName:string,clolist: string list) =
+    use basecon= new MySqlConnection(baseConf)
+    use destcon= new MySqlConnection(destConf)
+    basecon.Open()
+    destcon.Open()
+    use mutable basecom =new MySqlCommand()
+    basecom.Connection <-basecon
+    basecom.CommandText <- makeSelect(clolist,tableName,pkName)
+    basecom.Parameters.AddWithValue(pkName,pkey) |> ignore
+    use basereader= basecom.ExecuteReader()
+    let rec read()=
+        match basereader.Read() with
+            | true ->
+                //开始同步
+
+                read() + 1
+            | _ -> 0
+    read()
+
 [<EntryPoint>]
 let main argv =
     Console.ForegroundColor <-ConsoleColor.Green
     "hello for db" |> Console.WriteLine
     let conflist= getconig()
-    let table_name= gettablename(conflist.[0])
+    let table_name= getname(conflist.[0])
     let source=(conflist.[1],table_name) |> getDbStruct |> Async.RunSynchronously |> Set.ofList
     let dest =(conflist.[2],table_name) |> getDbStruct |> Async.RunSynchronously |> Set.ofList
     printinfo "基准数据库中领先的列"
