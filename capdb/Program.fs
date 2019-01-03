@@ -19,6 +19,12 @@ let getname (conf:string) =
 let makeSelect (clolist: string list,tableName:string,pkName:string)=
     let str=String.Join(",",clolist)
     sprintf "select %s from %s where %s=@%s" str tableName pkName pkName
+let makeRepalce (clolist: string list,tableName:string)=
+    let name= String.Join(",",clolist)
+    let values= String.Join (",",clolist |> List.map(fun x->
+        "@"+x))
+    sprintf "REPLACE INTO %s(%s) VALUES(%s)" tableName name values
+
 //获取对应表结构
 let getDbStruct (conf:string,table_name:string)=
     async{
@@ -66,7 +72,7 @@ let syncBaseToDest(baseConf:string,destConf:string,tableName:string,pkey:string,
         match basereader.Read() with
             | true ->
                 //开始同步
-
+                
                 read() + 1
             | _ -> 0
     read()
