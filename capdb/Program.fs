@@ -72,6 +72,17 @@ let syncBaseToDest(baseConf:string,destConf:string,tableName:string,pkey:string,
         match basereader.Read() with
             | true ->
                 //开始同步
+                let sql= makeRepalce(clolist,tableName)
+                let mutable i=0
+                use mutable destcom =new MySqlCommand()
+                destcom.Connection <-destcon
+                destcom.CommandText <-sql
+                sql |> Console.WriteLine
+                clolist |> List.map(fun x->
+                    //添加值到sql中
+                    destcom.Parameters.AddWithValue(x,basereader.GetValue(i)) |> ignore
+                    printfn "name is %s and value is %A" x (basereader.GetValue(i))
+                    i<- i+1 ) |> ignore
                 
                 read() + 1
             | _ -> 0
@@ -83,8 +94,9 @@ let main argv =
     "hello for db" |> Console.WriteLine
     let conflist= getconig()
     let table_name= getname(conflist.[0])
-    let source=(conflist.[1],table_name) |> getDbStruct |> Async.RunSynchronously |> Set.ofList
-    let dest =(conflist.[2],table_name) |> getDbStruct |> Async.RunSynchronously |> Set.ofList
+    let pkname= getname(conflist.[1])
+    let source=(conflist.[2],table_name) |> getDbStruct |> Async.RunSynchronously |> Set.ofList
+    let dest =(conflist.[3],table_name) |> getDbStruct |> Async.RunSynchronously |> Set.ofList
     printinfo "基准数据库中领先的列"
     Console.ForegroundColor <-ConsoleColor.DarkYellow
     source - dest  |> Set.map (fun x->
@@ -94,5 +106,10 @@ let main argv =
     dest - source  |> Set.map (fun x->
      x |> Console.WriteLine) |> ignore
     Console.ResetColor()
-    Console.Read() |> ignore
+    printinfo "请输入需要同步id，如果不需要同步直接回车"
+    let ct= Console.ReadLine()
+    let result =match ct with
+                        | "" ->0
+                        | x -> syncBaseToDest(conflist.[2],conflist.[3],table_name,x,pkname,Set.intersect dest source |> Set.toList)
+    printfn "sync result is %d" result
     0 // return an integer exit code
