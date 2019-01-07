@@ -17,10 +17,12 @@ let getconig () =
 let getname (conf:string) =
         conf.Split [|'='|] |>  Array.last
 let makeSelect (clolist: string list,tableName:string,pkName:string)=
-    let str=String.Join(",",clolist)
+    let str=String.Join(",",clolist |> List.map(fun x->
+        "`"+x+"`"))
     sprintf "select %s from %s where %s=@%s" str tableName pkName pkName
 let makeRepalce (clolist: string list,tableName:string)=
-    let name= String.Join(",",clolist)
+    let name= String.Join(",",clolist |> List.map(fun x->
+        "`"+x+"`"))
     let values= String.Join (",",clolist |> List.map(fun x->
         "@"+x))
     sprintf "REPLACE INTO %s(%s) VALUES(%s)" tableName name values
@@ -83,7 +85,8 @@ let syncBaseToDest(baseConf:string,destConf:string,tableName:string,pkey:string,
                     destcom.Parameters.AddWithValue(x,basereader.GetValue(i)) |> ignore
                     printfn "name is %s and value is %A" x (basereader.GetValue(i))
                     i<- i+1 ) |> ignore
-                
+                let rownum=destcom.ExecuteNonQuery()
+                printfn "replace %d row " rownum
                 read() + 1
             | _ -> 0
     read()
