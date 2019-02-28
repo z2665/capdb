@@ -53,12 +53,39 @@ let getDbStruct (conf:string,table_name:string)=
         }     
         return read() |>Async.RunSynchronously
     }
-let printinfo (x:string) =
-        let old= Console.ForegroundColor
-        Console.ForegroundColor <-ConsoleColor.DarkGreen
-        x|> Console.WriteLine |> ignore
-        Console.ForegroundColor <- old
+type myPrint=
+    static member printinfo (x:string,?infocolor:ConsoleColor) =
+            let col=defaultArg infocolor ConsoleColor.DarkGreen
+            let old= Console.ForegroundColor
+            Console.ForegroundColor <-col
+            x|> Console.WriteLine |> ignore
+            Console.ForegroundColor <- old
 
+//查询目标库值，如果只有一列说明主键唯一，则执行diff比较
+let getDestVaule(destcon:MySqlConnection,tableName:string,pkey:string,pkName:string,clolist: string list)=
+    use mutable destcom =new MySqlCommand()
+    destcom.Connection<-destcon
+    destcom.CommandText <- makeSelect(clolist,tableName,pkName)
+    destcom.Parameters.AddWithValue(pkName,pkey) |> ignore
+    use destreader= destcom.ExecuteReader()
+    let mutable one=true
+    let rec read(result:option<Map<string,obj>>)=
+            match destreader.Read() with
+            | true -> 
+                match one with
+                    | true->
+                        let mutable i=0
+                        let res=Some(clolist |> List.map(fun x ->
+                            i<-i+1
+                            (x,destreader.GetValue(i-1))
+                        )|> Map.ofList)
+                        one<-false
+                        read(res)
+                    | _ -> None
+            | _ -> result
+    read(None)
+        
+ 
 //同步基准库到目标库
 let syncBaseToDest(baseConf:string,destConf:string,tableName:string,pkey:string,pkName:string,clolist: string list) =
     use basecon= new MySqlConnection(baseConf)
@@ -69,6 +96,7 @@ let syncBaseToDest(baseConf:string,destConf:string,tableName:string,pkey:string,
     basecom.Connection <-basecon
     basecom.CommandText <- makeSelect(clolist,tableName,pkName)
     basecom.Parameters.AddWithValue(pkName,pkey) |> ignore
+    let destmap=getDestVaule(destcon,tableName,pkey,pkName,clolist)
     use basereader= basecom.ExecuteReader()
     let rec read()=
         match basereader.Read() with
@@ -83,7 +111,15 @@ let syncBaseToDest(baseConf:string,destConf:string,tableName:string,pkey:string,
                 clolist |> List.map(fun x->
                     //添加值到sql中
                     destcom.Parameters.AddWithValue(x,basereader.GetValue(i)) |> ignore
-                    printfn "name is %s and value is %A" x (basereader.GetValue(i))
+                    match destmap with
+                    |Some(dmap) ->
+                        let old=basereader.GetValue(i)
+                        if Convert.ToString(old)=Convert.ToString(dmap.[x]) then
+                            printfn "name is %s and value is %A" x (basereader.GetValue(i))
+                        else
+                            myPrint.printinfo(sprintf "name is %s and value is %A -> %A" x dmap.[x] (basereader.GetValue(i)),ConsoleColor.Blue)
+                    |None->
+                        printfn "name is %s and value is %A" x (basereader.GetValue(i))
                     i<- i+1 ) |> ignore
                 let rownum=destcom.ExecuteNonQuery()
                 printfn "replace %d row " rownum
@@ -100,16 +136,16 @@ let main argv =
     let pkname= getname(conflist.[1])
     let source=(conflist.[2],table_name) |> getDbStruct |> Async.RunSynchronously |> Set.ofList
     let dest =(conflist.[3],table_name) |> getDbStruct |> Async.RunSynchronously |> Set.ofList
-    printinfo "基准数据库中领先的列"
+    myPrint.printinfo "基准数据库中领先的列"
     Console.ForegroundColor <-ConsoleColor.DarkYellow
     source - dest  |> Set.map (fun x->
      x |> Console.WriteLine) |> ignore
     Console.ForegroundColor <-ConsoleColor.Red
-    printinfo "基准数据库中删除的列"
+    myPrint.printinfo "基准数据库中删除的列"
     dest - source  |> Set.map (fun x->
      x |> Console.WriteLine) |> ignore
     Console.ResetColor()
-    printinfo "请输入需要同步id，如果不需要同步直接回车"
+    myPrint.printinfo "请输入需要同步id，如果不需要同步直接回车"
     let ct= Console.ReadLine()
     let result =match ct with
                         | "" ->0
